@@ -629,9 +629,25 @@ export default class ClaudeDashExtension extends Extension {
         this._dbus.export(Gio.DBus.session, DBUS_OBJECT_PATH);
 
         this._button.startUsagePolling();
+
+        // On shell startup other extensions may enable after us and insert at
+        // position=0 too, pushing us right. Re-snap a couple of times after
+        // startup settles so we end up leftmost.
+        this._repositionIds = [];
+        for (const delay of [500, 1500, 3000]) {
+            const id = GLib.timeout_add(GLib.PRIORITY_LOW, delay, () => {
+                this._snapLeftmost();
+                return GLib.SOURCE_REMOVE;
+            });
+            this._repositionIds.push(id);
+        }
     }
 
     disable() {
+        if (this._repositionIds) {
+            for (const id of this._repositionIds) GLib.Source.remove(id);
+            this._repositionIds = null;
+        }
         if (this._button) {
             this._button.stopUsagePolling();
         }
@@ -642,6 +658,14 @@ export default class ClaudeDashExtension extends Extension {
         if (this._button) {
             this._button.destroy();
             this._button = null;
+        }
+    }
+
+    _snapLeftmost() {
+        const container = this._button?.container;
+        const parent = container?.get_parent();
+        if (parent && typeof parent.set_child_at_index === 'function') {
+            parent.set_child_at_index(container, 0);
         }
     }
 
