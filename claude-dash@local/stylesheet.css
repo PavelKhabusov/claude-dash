@@ -1,0 +1,44 @@
+.claude-indicator-box {
+    spacing: 4px;
+}
+
+.claude-badge {
+    background-color: #cc785c;
+    color: #ffffff;
+    border-radius: 8px;
+    padding: 1px 6px;
+    font-weight: bold;
+    font-size: 8pt;
+}
+
+.claude-section-header {
+    font-weight: bold;
+    font-size: 10pt;
+    color: #cc785c;
+    padding-top: 4px;
+}
+
+.claude-menu-sub {
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 9pt;
+    max-width: 420px;
+    padding-left: 8px;
+}
+
+.claude-menu-tool {
+    font-family: monospace;
+    font-size: 8pt;
+    color: rgba(255, 255, 255, 0.6);
+    max-width: 420px;
+    padding-left: 8px;
+}
+
+.claude-menu-idle {
+    color: rgba(255, 255, 255, 0.5);
+    font-style: italic;
+}
+
+.claude-quick-entry {
+    min-width: 300px;
+    padding: 4px 8px;
+}

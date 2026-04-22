@@ -1,0 +1,398 @@
+import GObject from 'gi://GObject';
+import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
+import St from 'gi://St';
+import Clutter from 'gi://Clutter';
+import Pango from 'gi://Pango';
+
+import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
+import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
+
+export const DBUS_IFACE_NAME = 'org.gnome.Shell.Extensions.ClaudeDash';
+export const DBUS_OBJECT_PATH = '/org/gnome/Shell/Extensions/ClaudeDash';
+
+const DBUS_IFACE = `
+<node>
+  <interface name="${DBUS_IFACE_NAME}">
+    <method name="SetPending">
+      <arg type="s" direction="in" name="session_id"/>
+      <arg type="s" direction="in" name="project"/>
+      <arg type="s" direction="in" name="cwd"/>
+      <arg type="s" direction="in" name="tool_name"/>
+      <arg type="s" direction="in" name="tool_input"/>
+      <arg type="s" direction="in" name="message"/>
+      <arg type="s" direction="in" name="state"/>
+    </method>
+    <method name="ClearPending">
+      <arg type="s" direction="in" name="session_id"/>
+    </method>
+    <method name="RequestApproval">
+      <arg type="s" direction="in" name="request_id"/>
+      <arg type="s" direction="in" name="session_id"/>
+      <arg type="s" direction="in" name="project"/>
+      <arg type="s" direction="in" name="cwd"/>
+      <arg type="s" direction="in" name="tool_name"/>
+      <arg type="s" direction="in" name="tool_input"/>
+      <arg type="s" direction="in" name="socket_path"/>
+    </method>
+    <method name="CancelApproval">
+      <arg type="s" direction="in" name="request_id"/>
+    </method>
+    <method name="Clear"/>
+    <method name="List">
+      <arg type="s" direction="out" name="json"/>
+    </method>
+  </interface>
+</node>`;
+
+const SETTINGS_PATH = GLib.build_filenamev([GLib.get_user_config_dir(), 'claude-dash', 'settings.json']);
+
+function loadSettings() {
+    try {
+        const [ok, contents] = GLib.file_get_contents(SETTINGS_PATH);
+        if (!ok) return {};
+        return JSON.parse(new TextDecoder().decode(contents));
+    } catch (_e) {
+        return {};
+    }
+}
+
+function saveSettings(obj) {
+    try {
+        GLib.mkdir_with_parents(GLib.path_get_dirname(SETTINGS_PATH), 0o700);
+        GLib.file_set_contents(SETTINGS_PATH, JSON.stringify(obj, null, 2));
+    } catch (e) {
+        console.error('claude-dash: save settings failed:', e.message);
+    }
+}
+
+// Every load uses a fresh GTypeName so the extension can be reloaded in
+// place without triggering "type already registered" errors.
+const _GTYPE_SUFFIX = Date.now().toString(36);
+
+const ClaudeDashButton = GObject.registerClass({
+    GTypeName: 'ClaudeDashButton_' + _GTYPE_SUFFIX,
+}, class ClaudeDashButton extends PanelMenu.Button {
+    _init(extensionPath) {
+        super._init(0.5, 'Claude Dash');
+
+        this._pending = new Map();
+        this._approvals = new Map();
+        this._settings = loadSettings();
+        if (typeof this._settings.approvals_enabled !== 'boolean')
+            this._settings.approvals_enabled = true;
+
+        this._iconIdle = Gio.icon_new_for_string(extensionPath + '/icons/claude-idle.svg');
+        this._iconBusy = Gio.icon_new_for_string(extensionPath + '/icons/claude-busy.svg');
+        this._iconActive = Gio.icon_new_for_string(extensionPath + '/icons/claude-active.svg');
+
+        const box = new St.BoxLayout({ style_class: 'claude-indicator-box' });
+        this._icon = new St.Icon({
+            gicon: this._iconIdle,
+            style_class: 'system-status-icon',
+        });
+        this._badge = new St.Label({
+            text: '',
+            style_class: 'claude-badge',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._badge.hide();
+        box.add_child(this._icon);
+        box.add_child(this._badge);
+        this.add_child(box);
+
+        this._rebuildMenu();
+    }
+
+    setPending(sessionId, project, cwd, toolName, toolInput, message, state) {
+        if (!sessionId) sessionId = 'default';
+        const normState = (state === 'busy' || state === 'urgent' || state === 'idle') ? state : 'urgent';
+        this._pending.set(sessionId, {
+            project: project || (cwd ? cwd.split('/').pop() : 'claude'),
+            cwd: cwd || '',
+            tool: toolName || '',
+            input: toolInput || '',
+            message: message || '',
+            state: normState,
+            ts: Date.now(),
+        });
+        this._rebuildMenu();
+        this._updateIcon();
+    }
+
+    clearPending(sessionId) {
+        if (!sessionId) sessionId = 'default';
+        if (this._pending.delete(sessionId)) {
+            this._rebuildMenu();
+            this._updateIcon();
+        }
+    }
+
+    requestApproval(requestId, sessionId, project, cwd, toolName, toolInput, socketPath) {
+        if (!requestId) return;
+        this._approvals.set(requestId, {
+            sessionId: sessionId || '',
+            project: project || (cwd ? cwd.split('/').pop() : 'claude'),
+            cwd: cwd || '',
+            tool: toolName || '',
+            input: toolInput || '',
+            socketPath: socketPath || '',
+            ts: Date.now(),
+        });
+        this._rebuildMenu();
+        this._updateIcon();
+    }
+
+    cancelApproval(requestId) {
+        if (this._approvals.delete(requestId)) {
+            this._rebuildMenu();
+            this._updateIcon();
+        }
+    }
+
+    clearAll() {
+        this._pending.clear();
+        this._approvals.clear();
+        this._rebuildMenu();
+        this._updateIcon();
+    }
+
+    listJson() {
+        const pending = [];
+        for (const [k, v] of this._pending.entries())
+            pending.push(Object.assign({ session_id: k }, v));
+        const approvals = [];
+        for (const [k, v] of this._approvals.entries())
+            approvals.push(Object.assign({ request_id: k }, v));
+        return JSON.stringify({ pending, approvals });
+    }
+
+    _respondApproval(requestId, decision) {
+        const info = this._approvals.get(requestId);
+        if (!info) return;
+        try {
+            const addr = Gio.UnixSocketAddress.new(info.socketPath);
+            const client = new Gio.SocketClient();
+            const conn = client.connect(addr, null);
+            const stream = conn.get_output_stream();
+            const payload = new TextEncoder().encode(decision + '\n');
+            stream.write(payload, null);
+            stream.close(null);
+            conn.close(null);
+        } catch (e) {
+            console.error('claude-dash: approval respond failed:', e.message);
+        }
+        this._approvals.delete(requestId);
+        this._rebuildMenu();
+        this._updateIcon();
+    }
+
+    _updateIcon() {
+        let urgent = this._approvals.size;
+        let activity = 0;
+        for (const v of this._pending.values()) {
+            if (v.state === 'urgent') urgent++;
+            else activity++;
+        }
+
+        if (urgent > 0) {
+            this._icon.set_gicon(this._iconActive);
+            this._badge.set_text(String(urgent));
+            this._badge.show();
+        } else if (activity > 0) {
+            this._icon.set_gicon(this._iconBusy);
+            this._badge.hide();
+        } else {
+            this._icon.set_gicon(this._iconIdle);
+            this._badge.hide();
+        }
+    }
+
+    _makeLabelItem(text, styleClass) {
+        const item = new PopupMenu.PopupMenuItem(text, { reactive: false });
+        item.label.clutter_text.set_line_wrap(true);
+        item.label.clutter_text.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR);
+        if (styleClass)
+            item.label.add_style_class_name(styleClass);
+        return item;
+    }
+
+    _stateIcon(state) {
+        if (state === 'urgent') return '⚠️';
+        if (state === 'busy') return '⚡';
+        return '💭';
+    }
+
+    _rebuildMenu() {
+        this.menu.removeAll();
+
+        const projects = new Map();
+        const ensureProject = (name, cwd) => {
+            const key = name || 'claude';
+            if (!projects.has(key))
+                projects.set(key, { cwd: cwd || '', approvals: [], sessions: [] });
+            const p = projects.get(key);
+            if (!p.cwd && cwd) p.cwd = cwd;
+            return p;
+        };
+
+        for (const [rid, info] of this._approvals.entries())
+            ensureProject(info.project, info.cwd).approvals.push([rid, info]);
+
+        const approvedSessions = new Set();
+        for (const info of this._approvals.values())
+            if (info.sessionId) approvedSessions.add(info.sessionId);
+
+        for (const [sid, info] of this._pending.entries()) {
+            if (approvedSessions.has(sid)) continue;
+            ensureProject(info.project, info.cwd).sessions.push([sid, info]);
+        }
+
+        if (projects.size === 0) {
+            const idle = new PopupMenu.PopupMenuItem('Claude Code · idle', { reactive: false });
+            idle.label.add_style_class_name('claude-menu-idle');
+            this.menu.addMenuItem(idle);
+        } else {
+            const projectList = [...projects.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+            projectList.forEach(([name, data], pIdx) => {
+                if (pIdx > 0)
+                    this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
+                this.menu.addMenuItem(this._makeLabelItem(name, 'claude-section-header'));
+
+                const approvals = data.approvals.sort((a, b) => a[1].ts - b[1].ts);
+                for (const [rid, info] of approvals) {
+                    const line = info.input
+                        ? `🔔  ${info.tool}: ${info.input}`
+                        : `🔔  ${info.tool || 'request'}`;
+                    this.menu.addMenuItem(this._makeLabelItem(line, 'claude-menu-tool'));
+
+                    const allow = new PopupMenu.PopupMenuItem('  ✅ Allow');
+                    allow.connect('activate', () => this._respondApproval(rid, 'allow'));
+                    this.menu.addMenuItem(allow);
+
+                    const deny = new PopupMenu.PopupMenuItem('  ❌ Deny');
+                    deny.connect('activate', () => this._respondApproval(rid, 'deny'));
+                    this.menu.addMenuItem(deny);
+                }
+
+                const sessions = data.sessions.sort((a, b) => {
+                    const order = { urgent: 0, busy: 1, idle: 2 };
+                    const oa = order[a[1].state] ?? 1;
+                    const ob = order[b[1].state] ?? 1;
+                    if (oa !== ob) return oa - ob;
+                    return b[1].ts - a[1].ts;
+                });
+                for (const [sid, info] of sessions) {
+                    const icon = this._stateIcon(info.state);
+                    let line = `${icon}  `;
+                    if (info.tool)
+                        line += info.input ? `${info.tool}: ${info.input}` : info.tool;
+                    else if (info.message)
+                        line += info.message;
+                    else
+                        line += '…';
+                    const item = this._makeLabelItem(line, 'claude-menu-tool');
+                    item.reactive = true;
+                    item.can_focus = true;
+                    item.connect('activate', () => this.clearPending(sid));
+                    this.menu.addMenuItem(item);
+                }
+
+                const focus = new PopupMenu.PopupMenuItem('Open VSCode window');
+                focus.connect('activate', () => this._focusWindow(data.cwd, name));
+                this.menu.addMenuItem(focus);
+            });
+        }
+
+        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
+        const toggleApprovals = new PopupMenu.PopupSwitchMenuItem(
+            'Intercept tool approvals',
+            this._settings.approvals_enabled
+        );
+        toggleApprovals.connect('toggled', (_item, state) => {
+            this._settings.approvals_enabled = state;
+            saveSettings(this._settings);
+        });
+        this.menu.addMenuItem(toggleApprovals);
+
+        if (this._pending.size > 0 || this._approvals.size > 0) {
+            const clearAll = new PopupMenu.PopupMenuItem('Clear all');
+            clearAll.connect('activate', () => this.clearAll());
+            this.menu.addMenuItem(clearAll);
+        }
+    }
+
+    _focusWindow(cwd, project) {
+        const name = (project || (cwd ? cwd.split('/').pop() : '') || '').toLowerCase();
+        const windows = global.display.list_all_windows();
+        if (!name) {
+            for (const w of windows) {
+                if ((w.get_wm_class() || '').toLowerCase() === 'code') {
+                    Main.activateWindow(w);
+                    return;
+                }
+            }
+            return;
+        }
+        let match = null;
+        let fallback = null;
+        for (const w of windows) {
+            const wmClass = (w.get_wm_class() || '').toLowerCase();
+            if (wmClass !== 'code') continue;
+            const title = (w.get_title() || '').toLowerCase();
+            if (title.includes(name)) { match = w; break; }
+            if (!fallback) fallback = w;
+        }
+        const target = match || fallback;
+        if (target) Main.activateWindow(target);
+    }
+});
+
+export default class ClaudeDashExtension extends Extension {
+    enable() {
+        this._button = new ClaudeDashButton(this.path);
+        Main.panel.addToStatusArea('claude-dash', this._button);
+
+        this._dbus = Gio.DBusExportedObject.wrapJSObject(DBUS_IFACE, this);
+        this._dbus.export(Gio.DBus.session, DBUS_OBJECT_PATH);
+    }
+
+    disable() {
+        if (this._dbus) {
+            this._dbus.unexport();
+            this._dbus = null;
+        }
+        if (this._button) {
+            this._button.destroy();
+            this._button = null;
+        }
+    }
+
+    SetPending(sessionId, project, cwd, toolName, toolInput, message, state) {
+        this._button?.setPending(sessionId, project, cwd, toolName, toolInput, message, state);
+    }
+
+    ClearPending(sessionId) {
+        this._button?.clearPending(sessionId);
+    }
+
+    RequestApproval(requestId, sessionId, project, cwd, toolName, toolInput, socketPath) {
+        this._button?.requestApproval(requestId, sessionId, project, cwd, toolName, toolInput, socketPath);
+    }
+
+    CancelApproval(requestId) {
+        this._button?.cancelApproval(requestId);
+    }
+
+    Clear() {
+        this._button?.clearAll();
+    }
+
+    List() {
+        return this._button ? this._button.listJson() : '{}';
+    }
+}

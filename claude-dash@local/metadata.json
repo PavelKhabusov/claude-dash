@@ -1,0 +1,8 @@
+{
+  "uuid": "claude-dash@local",
+  "name": "Claude Dash",
+  "description": "Top panel indicator and approval surface for Claude Code: shows pending permissions from any VSCode Claude Code session, lets you allow/deny from the tray, and jumps to the right VSCode window.",
+  "shell-version": ["45", "46", "47", "48", "49"],
+  "version": 1,
+  "url": "https://github.com/pavelkhabusov/claude-dash"
+}

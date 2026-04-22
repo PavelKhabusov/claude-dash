@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "Notification": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "python3 /home/pavel/.claude/hooks/claude-hook.py" }] }
+    ],
+    "PreToolUse": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "python3 /home/pavel/.claude/hooks/claude-hook.py" }] }
+    ],
+    "Stop": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "python3 /home/pavel/.claude/hooks/claude-hook.py" }] }
+    ],
+    "SubagentStop": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "python3 /home/pavel/.claude/hooks/claude-hook.py" }] }
+    ],
+    "UserPromptSubmit": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "python3 /home/pavel/.claude/hooks/claude-hook.py" }] }
+    ],
+    "SessionEnd": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "python3 /home/pavel/.claude/hooks/claude-hook.py" }] }
+    ]
+  }
+}
