@@ -42,3 +42,21 @@
     min-width: 300px;
     padding: 4px 8px;
 }
+
+.claude-history-scroll {
+    min-width: 400px;
+    max-width: 480px;
+    min-height: 80px;
+    max-height: 200px;
+}
+
+.claude-history-box {
+    spacing: 2px;
+    padding: 4px 8px;
+}
+
+.claude-history-entry {
+    font-size: 9pt;
+    color: rgba(255, 255, 255, 0.75);
+    padding: 2px 0;
+}

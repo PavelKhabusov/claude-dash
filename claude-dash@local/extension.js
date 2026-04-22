@@ -80,9 +80,12 @@ const ClaudeDashButton = GObject.registerClass({
 
         this._pending = new Map();
         this._approvals = new Map();
+        this._history = [];
         this._settings = loadSettings();
         if (typeof this._settings.approvals_enabled !== 'boolean')
             this._settings.approvals_enabled = true;
+        if (typeof this._settings.auto_approve !== 'boolean')
+            this._settings.auto_approve = false;
 
         this._iconIdle = Gio.icon_new_for_string(extensionPath + '/icons/claude-idle.svg');
         this._iconBusy = Gio.icon_new_for_string(extensionPath + '/icons/claude-busy.svg');
@@ -132,15 +135,17 @@ const ClaudeDashButton = GObject.registerClass({
 
     requestApproval(requestId, sessionId, project, cwd, toolName, toolInput, socketPath) {
         if (!requestId) return;
+        const projName = project || (cwd ? cwd.split('/').pop() : 'claude');
         this._approvals.set(requestId, {
             sessionId: sessionId || '',
-            project: project || (cwd ? cwd.split('/').pop() : 'claude'),
+            project: projName,
             cwd: cwd || '',
             tool: toolName || '',
             input: toolInput || '',
             socketPath: socketPath || '',
             ts: Date.now(),
         });
+        this._pushHistory('request', projName, toolName, toolInput);
         this._rebuildMenu();
         this._updateIcon();
     }
@@ -184,9 +189,33 @@ const ClaudeDashButton = GObject.registerClass({
         } catch (e) {
             console.error('claude-dash: approval respond failed:', e.message);
         }
+        this._pushHistory(decision, info.project, info.tool, info.input);
         this._approvals.delete(requestId);
         this._rebuildMenu();
         this._updateIcon();
+    }
+
+    _pushHistory(kind, project, tool, input) {
+        this._history.push({
+            ts: Date.now(),
+            kind, project: project || '', tool: tool || '', input: input || '',
+        });
+        while (this._history.length > 50)
+            this._history.shift();
+    }
+
+    _historyIcon(kind) {
+        if (kind === 'allow') return '✅';
+        if (kind === 'deny') return '❌';
+        if (kind === 'request') return '🔔';
+        return '·';
+    }
+
+    _formatTime(ts) {
+        const d = new Date(ts);
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        return `${hh}:${mm}`;
     }
 
     _updateIcon() {
@@ -307,6 +336,9 @@ const ClaudeDashButton = GObject.registerClass({
             });
         }
 
+        if (this._history.length > 0)
+            this._appendHistorySection();
+
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
         const toggleApprovals = new PopupMenu.PopupSwitchMenuItem(
@@ -319,11 +351,60 @@ const ClaudeDashButton = GObject.registerClass({
         });
         this.menu.addMenuItem(toggleApprovals);
 
+        const toggleAuto = new PopupMenu.PopupSwitchMenuItem(
+            'Auto-approve every tool',
+            this._settings.auto_approve
+        );
+        toggleAuto.connect('toggled', (_item, state) => {
+            this._settings.auto_approve = state;
+            saveSettings(this._settings);
+        });
+        this.menu.addMenuItem(toggleAuto);
+
         if (this._pending.size > 0 || this._approvals.size > 0) {
             const clearAll = new PopupMenu.PopupMenuItem('Clear all');
             clearAll.connect('activate', () => this.clearAll());
             this.menu.addMenuItem(clearAll);
         }
+    }
+
+    _appendHistorySection() {
+        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+        this.menu.addMenuItem(this._makeLabelItem('History', 'claude-section-header'));
+
+        const container = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
+        const scroll = new St.ScrollView({
+            style_class: 'claude-history-scroll',
+            hscrollbar_policy: St.PolicyType.NEVER,
+            vscrollbar_policy: St.PolicyType.AUTOMATIC,
+            x_expand: true,
+        });
+        const box = new St.BoxLayout({
+            vertical: true,
+            x_expand: true,
+            style_class: 'claude-history-box',
+        });
+        const reversed = [...this._history].reverse();
+        for (const h of reversed) {
+            const icon = this._historyIcon(h.kind);
+            const time = this._formatTime(h.ts);
+            const tool = h.tool ? `${h.tool}${h.input ? ': ' + h.input : ''}` : '';
+            const text = `${icon}  ${time}  ${h.project}${tool ? '  ·  ' + tool : ''}`;
+            const label = new St.Label({ text, style_class: 'claude-history-entry' });
+            label.clutter_text.set_line_wrap(true);
+            label.clutter_text.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR);
+            box.add_child(label);
+        }
+        scroll.add_child(box);
+        container.add_child(scroll);
+        this.menu.addMenuItem(container);
+
+        const clearHist = new PopupMenu.PopupMenuItem('Clear history');
+        clearHist.connect('activate', () => {
+            this._history = [];
+            this._rebuildMenu();
+        });
+        this.menu.addMenuItem(clearHist);
     }
 
     _focusWindow(cwd, project) {

@@ -47,13 +47,22 @@ def _log(msg):
         pass
 
 
-def tray_approvals_enabled():
-    """Read the extension's toggle state — default on if file missing."""
+def _read_settings():
     try:
         with open(SETTINGS_PATH) as f:
-            return bool(json.load(f).get("approvals_enabled", True))
+            return json.load(f)
     except Exception:
-        return True
+        return {}
+
+
+def tray_approvals_enabled():
+    """Read the extension's toggle state — default on if file missing."""
+    return bool(_read_settings().get("approvals_enabled", True))
+
+
+def auto_approve_enabled():
+    """If on, hook returns 'allow' for every PreToolUse without blocking."""
+    return bool(_read_settings().get("auto_approve", False))
 
 
 def gv_str(s):
@@ -267,6 +276,18 @@ def handle_pretooluse(data):
     tool_name = data.get("tool_name") or ""
     tool_input_dict = data.get("tool_input") or {}
     tool_input = summarize_tool_input(tool_input_dict)
+
+    if auto_approve_enabled():
+        # Tell the indicator we're doing something, then allow without asking.
+        set_pending(session_id, project, cwd, tool_name, tool_input, "", "busy")
+        sys.stdout.write(json.dumps({
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow",
+            },
+        }))
+        sys.stdout.flush()
+        return
 
     if not tray_approvals_enabled():
         set_pending(session_id, project, cwd, tool_name, tool_input, "", "busy")
