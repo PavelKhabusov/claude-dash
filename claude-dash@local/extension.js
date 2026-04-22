@@ -392,6 +392,14 @@ const ClaudeDashButton = GObject.registerClass({
         return '💭';
     }
 
+    _makeToggle(label, initial, onToggled) {
+        const item = new PopupMenu.PopupSwitchMenuItem(label, initial);
+        // Default activate() closes the menu. We only want to flip the switch.
+        item.activate = function(_event) { this.toggle(); };
+        item.connect('toggled', onToggled);
+        return item;
+    }
+
     _rebuildMenu() {
         this.menu.removeAll();
 
@@ -494,57 +502,52 @@ const ClaudeDashButton = GObject.registerClass({
 
         const settings = new PopupMenu.PopupSubMenuMenuItem('⚙  Settings');
 
-        const toggleApprovals = new PopupMenu.PopupSwitchMenuItem(
+        settings.menu.addMenuItem(this._makeToggle(
             'Intercept tool approvals',
-            this._settings.approvals_enabled
-        );
-        toggleApprovals.connect('toggled', (_item, state) => {
-            this._settings.approvals_enabled = state;
-            saveSettings(this._settings);
-        });
-        settings.menu.addMenuItem(toggleApprovals);
+            this._settings.approvals_enabled,
+            (_item, state) => {
+                this._settings.approvals_enabled = state;
+                saveSettings(this._settings);
+            }
+        ));
 
-        const toggleAuto = new PopupMenu.PopupSwitchMenuItem(
+        settings.menu.addMenuItem(this._makeToggle(
             'Auto-approve every tool',
-            this._settings.auto_approve
-        );
-        toggleAuto.connect('toggled', (_item, state) => {
-            this._settings.auto_approve = state;
-            saveSettings(this._settings);
-            if (state) {
-                // Unblock every currently pending approval request right away.
-                for (const rid of [...this._approvals.keys()])
-                    this._respondApproval(rid, 'allow');
+            this._settings.auto_approve,
+            (_item, state) => {
+                this._settings.auto_approve = state;
+                saveSettings(this._settings);
+                if (state) {
+                    for (const rid of [...this._approvals.keys()])
+                        this._respondApproval(rid, 'allow');
+                }
             }
-        });
-        settings.menu.addMenuItem(toggleAuto);
+        ));
 
-        const toggleSound = new PopupMenu.PopupSwitchMenuItem(
+        settings.menu.addMenuItem(this._makeToggle(
             'Play sounds',
-            this._settings.sound_enabled
-        );
-        toggleSound.connect('toggled', (_item, state) => {
-            this._settings.sound_enabled = state;
-            saveSettings(this._settings);
-        });
-        settings.menu.addMenuItem(toggleSound);
-
-        const toggleUsage = new PopupMenu.PopupSwitchMenuItem(
-            'Show Anthropic usage %',
-            this._settings.usage_enabled
-        );
-        toggleUsage.connect('toggled', (_item, state) => {
-            this._settings.usage_enabled = state;
-            saveSettings(this._settings);
-            if (state) {
-                this.startUsagePolling();
-            } else {
-                this.stopUsagePolling();
-                this._usage = null;
-                this._rebuildMenu();
+            this._settings.sound_enabled,
+            (_item, state) => {
+                this._settings.sound_enabled = state;
+                saveSettings(this._settings);
             }
-        });
-        settings.menu.addMenuItem(toggleUsage);
+        ));
+
+        settings.menu.addMenuItem(this._makeToggle(
+            'Show Anthropic usage %',
+            this._settings.usage_enabled,
+            (_item, state) => {
+                this._settings.usage_enabled = state;
+                saveSettings(this._settings);
+                if (state) {
+                    this.startUsagePolling();
+                } else {
+                    this.stopUsagePolling();
+                    this._usage = null;
+                    this._rebuildMenu();
+                }
+            }
+        ));
 
         if (this._pending.size > 0 || this._approvals.size > 0) {
             settings.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
