@@ -1,5 +1,12 @@
 # Claude Dash
 
+[![GNOME Shell](https://img.shields.io/badge/GNOME_Shell-45%E2%80%9349-4A86CF?style=flat-square&logo=gnome&logoColor=white)](https://www.gnome.org/)
+[![Wayland](https://img.shields.io/badge/Wayland-ready-success?style=flat-square)](https://wayland.freedesktop.org)
+[![Claude Code](https://img.shields.io/badge/Claude_Code-companion-CC785C?style=flat-square)](https://claude.com/claude-code)
+[![Platform](https://img.shields.io/badge/platform-Linux-blue?style=flat-square&logo=linux&logoColor=white)](https://www.linuxfoundation.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)](LICENSE)
+[![VSCode](https://img.shields.io/badge/VSCode-extension%20companion-007ACC?style=flat-square&logo=visualstudiocode&logoColor=white)](https://code.visualstudio.com/)
+
 A GNOME Shell panel indicator for [Claude Code](https://claude.com/claude-code)
 running in VSCode. Surfaces activity and permission prompts from every
 active Claude Code session across projects — approve or deny tools right from
