@@ -125,6 +125,7 @@ const ClaudeDashButton = GObject.registerClass({
             this._settings.history_enabled = true;
 
         this._overallState = 'empty';
+        this._doneTimerId = 0;
         this._usage = null;
         this._usageTimerId = 0;
         this._soupSession = null;
@@ -297,6 +298,10 @@ const ClaudeDashButton = GObject.registerClass({
             GLib.Source.remove(this._usageTimerId);
             this._usageTimerId = 0;
         }
+        if (this._doneTimerId) {
+            GLib.Source.remove(this._doneTimerId);
+            this._doneTimerId = 0;
+        }
     }
 
     _fetchUsage(isRetry = false) {
@@ -342,7 +347,18 @@ const ClaudeDashButton = GObject.registerClass({
         // Attention sound lives in requestApproval (per-approval granularity);
         // here we only cover the "Claude just finished" completion cue.
         if (newState === 'done' && (oldState === 'busy' || oldState === 'urgent')) {
-            this._playSound('complete');
+            // Delay 2s: compact-chat also fires Stop → done, then immediately
+            // resumes with busy. If that happens inside the window, cancel.
+            if (this._doneTimerId) GLib.Source.remove(this._doneTimerId);
+            this._doneTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
+                this._doneTimerId = 0;
+                if (this._overallState === 'done')
+                    this._playSound('complete');
+                return GLib.SOURCE_REMOVE;
+            });
+        } else if (this._doneTimerId && newState !== 'done') {
+            GLib.Source.remove(this._doneTimerId);
+            this._doneTimerId = 0;
         }
     }
 
