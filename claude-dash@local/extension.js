@@ -146,8 +146,14 @@ const ClaudeDashButton = GObject.registerClass({
             y_align: Clutter.ActorAlign.CENTER,
         });
         this._badge.hide();
+        this._dot = new St.Widget({
+            style_class: 'claude-dot',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._dot.hide();
         box.add_child(this._icon);
         box.add_child(this._badge);
+        box.add_child(this._dot);
         this.add_child(box);
 
         this._rebuildMenu();
@@ -369,22 +375,33 @@ const ClaudeDashButton = GObject.registerClass({
             this._overallState = newState;
         }
 
-        const urgentCount = this._approvals.size +
-            [...this._pending.values()].filter(v => v.state === 'urgent').length;
+        const approvalCount = this._approvals.size;
+        const noticeCount = [...this._pending.values()].filter(v => v.state === 'urgent').length;
 
         if (newState === 'urgent') {
             this._icon.set_gicon(this._iconActive);
-            this._badge.set_text(String(urgentCount));
-            this._badge.show();
+            if (approvalCount > 0) {
+                // Approvals win the visual: numeric count covers both kinds.
+                this._badge.set_text(String(approvalCount + noticeCount));
+                this._badge.show();
+                this._dot.hide();
+            } else {
+                // Notice-only urgency (e.g. AskUserQuestion) → soft dot.
+                this._badge.hide();
+                this._dot.show();
+            }
         } else if (newState === 'busy') {
             this._icon.set_gicon(this._iconBusy);
             this._badge.hide();
+            this._dot.hide();
         } else if (newState === 'done') {
             this._icon.set_gicon(this._iconDone);
             this._badge.hide();
+            this._dot.hide();
         } else {
             this._icon.set_gicon(this._iconIdle);
             this._badge.hide();
+            this._dot.hide();
         }
     }
 
