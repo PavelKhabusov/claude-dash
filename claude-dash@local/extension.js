@@ -439,7 +439,9 @@ const ClaudeDashButton = GObject.registerClass({
     _autoAllowCategory(category) {
         const READ_BASH = new Set([
             'Read', 'Grep', 'Glob', 'LS', 'NotebookRead', 'Bash',
-            'TodoWrite', 'ToolSearch', 'Task', 'WebSearch', 'WebFetch', 'ExitPlanMode',
+            'TodoWrite', 'ToolSearch', 'Task', 'WebSearch', 'WebFetch',
+            'AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode',
+            'TaskOutput', 'TaskStop', 'Monitor', 'PushNotification',
         ]);
         const EDIT = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
         const match = category === 'read_bash' ? READ_BASH : category === 'edit' ? EDIT : null;
