@@ -456,7 +456,7 @@ const ClaudeDashButton = GObject.registerClass({
     _autoAllowCategory(category) {
         const READ_BASH = new Set([
             'Read', 'Grep', 'Glob', 'LS', 'NotebookRead', 'Bash',
-            'TodoWrite', 'ToolSearch', 'Task', 'WebSearch', 'WebFetch',
+            'TodoWrite', 'ToolSearch', 'Agent', 'Task', 'WebSearch', 'WebFetch',
             'AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode',
             'TaskOutput', 'TaskStop', 'Monitor', 'PushNotification',
         ]);

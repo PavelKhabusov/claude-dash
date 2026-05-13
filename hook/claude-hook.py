@@ -62,7 +62,7 @@ def tray_approvals_enabled():
 
 READ_BASH_TOOLS = {
     "Read", "Grep", "Glob", "LS", "NotebookRead", "Bash",
-    "TodoWrite", "ToolSearch", "Task", "WebSearch", "WebFetch",
+    "TodoWrite", "ToolSearch", "Agent", "Task", "WebSearch", "WebFetch",
     "AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
     "TaskOutput", "TaskStop", "Monitor", "PushNotification",
 }
