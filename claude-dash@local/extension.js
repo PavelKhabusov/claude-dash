@@ -460,11 +460,16 @@ const ClaudeDashButton = GObject.registerClass({
             'AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode',
             'TaskOutput', 'TaskStop', 'Monitor', 'PushNotification',
         ]);
+        const READ_BASH_PREFIXES = ['mcp__playwright__'];
         const EDIT = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
-        const match = category === 'read_bash' ? READ_BASH : category === 'edit' ? EDIT : null;
-        if (!match) return;
+        const matchesReadBash = (tool) =>
+            READ_BASH.has(tool) || READ_BASH_PREFIXES.some(p => tool.startsWith(p));
+        const matches = category === 'read_bash'
+            ? matchesReadBash
+            : category === 'edit' ? (tool) => EDIT.has(tool) : null;
+        if (!matches) return;
         for (const [rid, info] of [...this._approvals.entries()]) {
-            if (match.has(info.tool))
+            if (matches(info.tool))
                 this._respondApproval(rid, 'allow');
         }
     }

@@ -66,6 +66,7 @@ READ_BASH_TOOLS = {
     "AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
     "TaskOutput", "TaskStop", "Monitor", "PushNotification",
 }
+READ_BASH_PREFIXES = ("mcp__playwright__",)
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 
 
@@ -80,7 +81,7 @@ def auto_approve_for(tool_name):
         return val
     if not isinstance(val, dict):
         return False
-    if tool_name in READ_BASH_TOOLS:
+    if tool_name in READ_BASH_TOOLS or tool_name.startswith(READ_BASH_PREFIXES):
         return bool(val.get("read_bash"))
     if tool_name in EDIT_TOOLS:
         return bool(val.get("edit"))
